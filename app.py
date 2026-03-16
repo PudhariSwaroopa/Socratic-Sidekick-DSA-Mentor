@@ -20,10 +20,10 @@ from langchain_core.prompts import ChatPromptTemplate
 # Streamlit UI
 # -------------------------
 
-st.title("🧠 Socratic Sidekick DSA Mentor")
-st.write("Paste your code or ask about a DSA problem.")
+st.set_page_config(page_title="Socratic Sidekick", page_icon="🧠")
 
-user_input = st.text_area("Your Question / Code", height=250)
+st.title("🧠 Socratic Sidekick DSA Mentor")
+st.write("Ask a DSA question or paste your code.")
 
 
 # -------------------------
@@ -75,7 +75,8 @@ text_chunks = splitter.split_documents(documents)
 # -------------------------
 
 embedding_model = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
 )
 
 
@@ -102,8 +103,8 @@ def create_vectorstore():
         )
 
     vectorstore = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=embedding_model
+        index_name=index_name,
+        embedding=embedding_model
     )
 
     return vectorstore
@@ -113,15 +114,18 @@ vectorstore = create_vectorstore()
 
 retriever = vectorstore.as_retriever(
     search_type="mmr",
-    search_kwargs={"k": 4}
+    search_kwargs={"k": 2}
 )
-
 
 # -------------------------
 # LLM
 # -------------------------
 
-llm = Ollama(model="llama3")
+llm = Ollama(
+    model="llama3",
+    temperature=0.2,
+    num_predict=200
+)
 
 
 # -------------------------
@@ -129,33 +133,29 @@ llm = Ollama(model="llama3")
 # -------------------------
 
 system_prompt = (
-    "You are a Socratic mentor that teaches Data Structures and Algorithms (DSA). "
-    "Your goal is to help students understand problems, analyze their code, and improve their reasoning skills. "
-    "You must guide students to discover mistakes and solutions themselves instead of giving direct answers."
+"You are Socratic Sidekick, a friendly AI mentor that teaches Data Structures and Algorithms (DSA). "
+"Your goal is to help students understand problems and develop problem-solving skills."
 
-    "\n\nThe student may provide:"
-    "\n• a DSA question"
-    "\n• a problem description"
-    "\n• their own code (which may contain logical or runtime errors)"
+"\n\nImportant rules:"
+"\n• Never invent a problem if the user did not provide one."
+"\n• If the user gives no code or problem description, politely ask them to provide one."
+"\n• If the user asks for the solution code, refuse politely and guide them with hints."
+"\n• If the user replies with short responses like 'yes', 'ok', or 'sure', continue guiding them."
 
-    "\n\nFollow these teaching steps carefully:\n"
+"\n\nIf the student provides code:"
+"\n1. Explain what the code is trying to do."
+"\n2. Identify logical mistakes or inefficiencies."
+"\n3. Explain the algorithm concept involved."
+"\n4. Provide hints so the student can fix the code."
 
-    "1. If the student provides code, carefully analyze the code step-by-step.\n"
-    "2. Identify logical mistakes or inefficiencies without fixing the code.\n"
-    "3. Explain the problem clearly.\n"
-    "4. Identify the algorithm pattern involved.\n"
-    "5. Explain the reasoning behind a correct approach.\n"
-    "6. Provide 2–3 hints that guide the student toward the solution.\n"
-    "7. NEVER provide code."
+"\n\nAlways structure responses as:"
+"\nCode Understanding"
+"\nProblem Explanation"
+"\nAlgorithm Pattern"
+"\nSolution Logic"
+"\nHints"
 
-    "\n\nStructure your response as:\n"
-    "Code Understanding\n"
-    "Problem Explanation\n"
-    "Algorithm Pattern\n"
-    "Solution Logic\n"
-    "Hints\n"
-
-    "\n\nContext:\n{context}"
+"\n\nContext:\n{context}"
 )
 
 
@@ -177,20 +177,45 @@ rag_chain = create_retrieval_chain(retriever, qa_chain)
 
 
 # -------------------------
-# Run Mentor
+# Chatbot Interface
 # -------------------------
 
-if st.button("Analyze Code"):
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    if user_input.strip() == "":
-        st.warning("Please enter a question or code")
 
-    else:
+# display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+
+# user input
+user_prompt = st.chat_input("Ask a DSA question or paste your code...")
+
+
+if user_prompt:
+
+    # store user message
+    st.session_state.messages.append(
+        {"role": "user", "content": user_prompt}
+    )
+
+    with st.chat_message("user"):
+        st.markdown(user_prompt)
+
+    # generate AI response
+    with st.chat_message("assistant"):
 
         with st.spinner("Mentor is thinking..."):
 
-            response = rag_chain.invoke({"input": user_input})
+            response = rag_chain.invoke({"input": user_prompt})
 
-        st.subheader("Guidance")
+            answer = response["answer"]
 
-        st.write(response["answer"])
+            st.markdown(answer)
+
+    # store assistant response
+    st.session_state.messages.append(
+        {"role": "assistant", "content": answer}
+    )
