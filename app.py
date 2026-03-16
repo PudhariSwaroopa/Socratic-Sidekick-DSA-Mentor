@@ -101,10 +101,9 @@ def create_vectorstore():
             )
         )
 
-    vectorstore = PineconeVectorStore.from_documents(
-        documents=text_chunks,
-        embedding=embedding_model,
-        index_name=index_name
+    vectorstore = PineconeVectorStore.from_existing_index(
+    index_name=index_name,
+    embedding=embedding_model
     )
 
     return vectorstore
@@ -114,7 +113,7 @@ vectorstore = create_vectorstore()
 
 retriever = vectorstore.as_retriever(
     search_type="mmr",
-    search_kwargs={"k": 8}
+    search_kwargs={"k": 4}
 )
 
 
